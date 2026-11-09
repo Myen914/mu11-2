@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鐵衛戰線：外星基地防禦戰 (Iron Sentinel)</title>
+    <!-- 引入 Google Fonts 的硬派科技感字體 -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- 引入 Tailwind CSS 庫進行基礎版面佈局 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* CSS 變數定義：硬科幻與重工業色彩系統 */
+        :root {
+            --bg-dark: #080a0f;
+            --panel-bg: #121620;
+            --metal-border: #3a4454;
+            --neon-cyan: #00f3ff;
+            --neon-amber: #ffaa00;
+            --neon-red: #ff2a4b;
+            --industrial-yellow: #e6b800;
+        }
+
+        /* 全域重置與背景設置 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-dark);
+            font-family: 'Share Tech Mono', monospace;
+            user-select: none;
+            color: #d1d5db;
+        }
+
+        /* 重工業警示條紋背景樣式 */
+        .hazard-stripe {
+            background: repeating-linear-gradient(
+                -45deg,
+                #1a1a00,
+                #1a1a00 10px,
+                var(--industrial-yellow) 10px,
+                var(--industrial-yellow) 20px
+            );
+            opacity: 0.15;
+        }
+
+        /* HUD 金屬面板質感與邊框 */
+        .industrial-panel {
+            background: linear-gradient(135deg, rgba(20, 26, 38, 0.9) 0%, rgba(10, 14, 22, 0.95) 100%);
+            border: 2px solid var(--metal-border);
+            box-shadow: inset 0 0 15px rgba(0, 243, 255, 0.05), 0 8px 32px rgba(0, 0, 0, 0.8);
+            position: relative;
+        }
+
+        /* 硬科幻金屬切角裝飾 */
+        .tech-corner-tl {
+            clip-path: polygon(15px 0, 100% 0, 100% 100%, 0 100%, 0 15px);
+        }
+
+        /* 掃描線效果 (CRT Scanline) 增加復古科幻感 */
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0, 0, 0, 0.3) 50%,
+                rgba(0, 0, 0, 0.3)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        /* 遊戲畫布容器 */
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 主 Canvas 畫布 */
+        canvas {
+            display: block;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            background-color: #000;
+        }
+
+        /* 硬核標題動態霓虹文字 Glow 效果 */
+        .glow-text-cyan {
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.7), 0 0 20px rgba(0, 243, 255, 0.4);
+        }
+        .glow-text-amber {
+            text-shadow: 0 0 10px rgba(255, 170, 0, 0.7), 0 0 20px rgba(255, 170, 0, 0.4);
+        }
+
+        /* 工業按鈕樣式 */
+        .btn-industrial {
+            background: linear-gradient(180deg, #2a3446 0%, #161c27 100%);
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            font-family: 'Orbitron', sans-serif;
+            font-weight: bold;
+            letter-spacing: 2px;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-industrial:hover {
+            background: var(--neon-cyan);
+            color: #000;
+            box-shadow: 0 0 15px var(--neon-cyan);
+        }
+
+        .btn-industrial:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="bg-black text-white select-none">
+
+    <!-- 遊戲主容器 -->
+    <div id="game-container">
+        
+        <!-- 畫布：顯示遊戲畫面 -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- CRT 螢幕掃描線覆蓋層 -->
+        <div class="scanlines absolute inset-0 pointer-events-none z-10"></div>
+
+        <!-- 頂部 HUD 資訊面板 (得分、生命值、波次) -->
+        <div id="hud-panel" class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-20 px-6 py-3 industrial-panel tech-corner-tl border-l-4 border-l-cyan-400">
+            <!-- 左側：基地核心狀態 (生命值) -->
+            <div class="flex items-center space-x-4">
+                <div class="text-xs text-gray-400 tracking-wider">BASE INTEGRITY:</div>
+                <div class="w-48 bg-gray-900 border border-gray-700 h-5 p-0.5 rounded-sm relative overflow-hidden">
+                    <div id="hp-bar" class="h-full bg-gradient-to-r from-red-600 via-amber-500 to-cyan-400 transition-all duration-300" style="width: 100%;"></div>
+                </div>
+                <span id="hp-text" class="font-bold text-cyan-400 font-mono text-sm">100%</span>
+            </div>
+
+            <!-- 中間：硬派遊戲標題與波次 -->
+            <div class="text-center">
+                <div class="text-xs text-amber-500 tracking-widest uppercase">SECTOR DEFENSE ACTIVE</div>
+                <div id="wave-display" class="font-black text-xl text-white tracking-widest glow-text-amber" style="font-family: 'Orbitron';">WAVE 01</div>
+            </div>
+
+            <!-- 右側：玩家戰績得分 -->
+            <div class="text-right">
+                <div class="text-xs text-gray-400 tracking-wider">TOTAL THREATS ELIMINATED</div>
+                <div id="score-display" class="text-2xl font-bold text-cyan-400 font-mono glow-text-cyan">000000</div>
+            </div>
+        </div>
+
+        <!-- 遊戲開始/重新開始 彈出視窗 (Modal) -->
+        <div id="overlay-menu" class="absolute inset-0 bg-black/80 backdrop-blur-md flex justify-center items-center z-30">
+            <div class="industrial-panel p-8 max-w-md w-full mx-4 border-2 border-cyan-500/50 text-center relative overflow-hidden">
+                <!-- 背景警示線飾條 -->
+                <div class="hazard-stripe absolute inset-0 pointer-events-none"></div>
+
+                <!-- 選單內容 -->
+                <div class="relative z-10">
+                    <h1 class="text-3xl font-black text-cyan-400 tracking-wider mb-1 glow-text-cyan" style="font-family: 'Orbitron';">IRON SENTINEL</h1>
+                    <p class="text-xs text-amber-400 tracking-widest mb-6">PLANETARY SURFACE DEFENSE PROTOCOL</p>
+                    
+                    <div class="bg-black/60 p-4 border border-gray-800 rounded mb-6 text-left text-xs space-y-2 text-gray-300">
+                        <div class="text-cyan-400 font-bold mb-1 border-b border-gray-700 pb-1">MISSION CONTROLS:</div>
+                        <p><span class="text-amber-400 font-bold">A / D</span> 或 <span class="text-amber-400 font-bold">← / →</span> : 移動防禦砲塔 (Move Base Turret)</p>
+                        <p><span class="text-amber-400 font-bold">SPACE</span> 或 <span class="text-amber-400 font-bold">左鍵點擊</span> : 發射等離子重砲 (Fire Cannon)</p>
+                        <p class="text-gray-500 italic mt-2">提示：攔截所有降落的外星蜂巢無人機與隕石碎片，保護基地核心！</p>
+                    </div>
+
+                    <!-- 遊戲結束時顯示的分數資訊 -->
+                    <div id="game-over-info" class="hidden mb-6">
+                        <div class="text-red-500 font-bold text-lg mb-1 tracking-widest">DEFENSE LINE BREACHED!</div>
+                        <div class="text-gray-400 text-sm">FINAL SCORE: <span id="final-score" class="text-cyan-400 font-bold text-xl">0</span></div>
+                    </div>
+
+                    <!-- 開始/重試按鈕 -->
+                    <button id="start-btn" class="btn-industrial w-full py-4 text-lg rounded tech-corner-tl cursor-pointer">
+                        INITIALIZE DEFENSE
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JavaScript 遊戲核心邏輯 -->
+    <script>
+        /**
+         * ============================================================================
+         * 1. 遊戲系統初始化與全域變數 (Initialization & Global Variables)
+         * ============================================================================
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // DOM 元素引用
+        const hpBar = document.getElementById('hp-bar');
+        const hpText = document.getElementById('hp-text');
+        const scoreDisplay = document.getElementById('score-display');
+        const waveDisplay = document.getElementById('wave-display');
+        const overlayMenu = document.getElementById('overlay-menu');
+        const startBtn = document.getElementById('start-btn');
+        const gameOverInfo = document.getElementById('game-over-info');
+        const finalScoreText = document.getElementById('final-score');
+
+        // 遊戲畫布尺寸動態調整
+        let width, height;
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // 遊戲狀態變數
+        let isGameRunning = false;
+        let score = 0;
+        let baseHealth = 100;
+        let currentWave = 1;
+        let frameCount = 0;
+        let lastSpawnTime = 0;
+
+        // 按鍵輸入狀態監控
+        const keys = {
+            left: false,
+            right: false,
+            shoot: false
+        };
+
+        /**
+         * ============================================================================
+         * 2. Web Audio API 音效合成器 (Web Audio API Synthesizer)
+         * 免額外加載外部音檔，純程式碼即時合成重工業風格與發射音效
+         * ============================================================================
+         */
+        let audioCtx = null;
+
+        // 初始化 Audio Context (需響應使用者點擊事件)
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // 播放雷射發射音效 (高頻掠過下降)
+        function playLaserSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'sawtooth'; // 鋸齒波，營造硬科幻等離子槍感
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+            
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        // 播放爆炸音效 (白噪音合成爆炸重音)
+        function playExplosionSound(isHeavy = false) {
+            if (!audioCtx) return;
+            
+            // 創建白噪音緩衝區
+            const bufferSize = audioCtx.sampleRate * (isHeavy ? 0.4 : 0.2);
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+
+            const whiteNoise = audioCtx.createBufferSource();
+            whiteNoise.buffer = buffer;
+
+            // 低通濾波器，營造沉重爆炸悶音
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(isHeavy ? 300 : 600, audioCtx.currentTime);
+            filter.frequency.linearRampToValueAtTime(10, audioCtx.currentTime + (isHeavy ? 0.4 : 0.2));
+
+            const gain = audioCtx.createGain();
+            gain.gain.setValueAtTime(isHeavy ? 0.5 : 0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (isHeavy ? 0.4 : 0.2));
+
+            whiteNoise.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            whiteNoise.start();
+        }
+
+        /**
+         * ============================================================================
+         * 3. 遊戲物件類別 (Game Entity Classes)
+         * ============================================================================
+         */
+
+        // 3.1 背景星空與宇宙粒子系統 (Cosmos Starfield)
+        class Star {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 1.5 + 0.5;
+                this.speed = Math.random() * 0.5 + 0.1;
+                this.brightness = Math.random();
+            }
+
+            update() {
+                this.y += this.speed;
+                if (this.y > height) {
+                    this.y = 0;
+                    this.x = Math.random() * width;
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.brightness})`;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+        }
+
+        // 3.2 玩家防禦砲塔類別 (Player Heavy Turret)
+        class Player {
+            constructor() {
+                this.width = 60;
+                this.height = 40;
+                this.x = width / 2 - this.width / 2;
+                this.y = height - 70; // 位於基地上方
+                this.speed = 7;
+                this.coolDown = 0;
+            }
+
+            update() {
+                // 移動邏輯
+                if (keys.left && this.x > 10) {
+                    this.x -= this.speed;
+                }
+                if (keys.right && this.x < width - this.width - 10) {
+                    this.x += this.speed;
+                }
+
+                // 射擊冷卻控制
+                if (this.coolDown > 0) this.coolDown--;
+
+                // 射擊觸發
+                if (keys.shoot && this.coolDown === 0) {
+                    bullets.push(new Bullet(this.x + this.width / 2, this.y));
+                    playLaserSound();
+                    this.coolDown = 12; // 射擊間隔幀數
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                // 砲塔金屬履帶/底座 (硬工業風格)
+                ctx.fillStyle = '#1c2331';
+                ctx.strokeStyle = '#3a4454';
+                ctx.lineWidth = 2;
+                ctx.fillRect(0, 20, this.width, 20);
+                ctx.strokeRect(0, 20, this.width, 20);
+
+                // 履帶警示條紋
+                ctx.fillStyle = '#e6b800';
+                ctx.fillRect(5, 32, 10, 4);
+                ctx.fillRect(45, 32, 10, 4);
+
+                // 主砲塔身 (斜角金屬外殼)
+                ctx.fillStyle = '#2a3446';
+                ctx.beginPath();
+                ctx.moveTo(10, 20);
+                ctx.lineTo(20, 5);
+                ctx.lineTo(40, 5);
+                ctx.lineTo(50, 20);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 雙聯裝發射管
+                ctx.fillStyle = '#00f3ff';
+                ctx.fillRect(23, -8, 4, 15);
+                ctx.fillRect(33, -8, 4, 15);
+
+                // 核心發光點 (Cyan Glow)
+                ctx.shadowColor = '#00f3ff';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#00f3ff';
+                ctx.beginPath();
+                ctx.arc(30, 12, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+        // 3.3 等離子子彈類別 (Plasma Bullet)
+        class Bullet {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.speed = 14;
+                this.radius = 3;
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.y -= this.speed;
+                if (this.y < 0) this.markedForDeletion = true;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.shadowColor = '#00f3ff';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#00f3ff';
+                ctx.lineWidth = 2;
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 發射尾跡光束
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x, this.y + 12);
+                ctx.strokeStyle = 'rgba(0, 243, 255, 0.6)';
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        // 3.4 敵方實體類別：外星無人機與隕石 (Alien Drone & Meteor)
+        class Enemy {
+            constructor() {
+                this.radius = Math.random() * 15 + 15;
+                this.x = Math.random() * (width - this.radius * 2) + this.radius;
+                this.y = -this.radius * 2;
+                this.speed = Math.random() * 2 + 1.5 + (currentWave * 0.2);
+                this.type = Math.random() > 0.4 ? 'drone' : 'meteor'; // 60% 機會為無人機
+                this.hp = this.type === 'drone' ? 1 : 2;
+                this.rotation = 0;
+                this.rotSpeed = (Math.random() - 0.5) * 0.05;
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.y += this.speed;
+                this.rotation += this.rotSpeed;
+
+                // 檢查是否侵入基地防線 (觸底)
+                if (this.y > height - 60) {
+                    this.markedForDeletion = true;
+                    baseHealth -= this.type === 'drone' ? 10 : 20;
+                    createExplosion(this.x, height - 50, '#ff2a4b', 20);
+                    playExplosionSound(true);
+                    updateHUD();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                if (this.type === 'drone') {
+                    // 外星鋸齒無人機 (機械菱形與警示紅光)
+                    ctx.shadowColor = '#ff2a4b';
+                    ctx.shadowBlur = 8;
+                    ctx.strokeStyle = '#ff2a4b';
+                    ctx.fillStyle = '#1a050a';
+                    ctx.lineWidth = 2;
+
+                    ctx.beginPath();
+                    ctx.moveTo(0, -this.radius);
+                    ctx.lineTo(this.radius, 0);
+                    ctx.lineTo(0, this.radius);
+                    ctx.lineTo(-this.radius, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // 無人機紅光核心
+                    ctx.fillStyle = '#ff2a4b';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // 不規則岩石隕石 (硬邊粗糙感)
+                    ctx.strokeStyle = '#8c7355';
+                    ctx.fillStyle = '#2b231b';
+                    ctx.lineWidth = 2;
+
+                    ctx.beginPath();
+                    const sides = 6;
+                    for (let i = 0; i < sides; i++) {
+                        const angle = (i / sides) * Math.PI * 2;
+                        const r = this.radius * (0.8 + Math.sin(i * 99) * 0.2);
+                        const px = Math.cos(angle) * r;
+                        const py = Math.sin(angle) * r;
+                        if (i === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // 3.5 火花與粒子爆破系統 (Explosion Particle System)
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.radius = Math.random() * 3 + 1;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 1;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.alpha = 1;
+                this.decay = Math.random() * 0.03 + 0.015;
+                this.markedForDeletion = false;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.alpha -= this.decay;
+                if (this.alpha <= 0) this.markedForDeletion = true;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 5;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 4. 遊戲主實體容器與邏輯 (Game Management & Logic)
+         * ============================================================================
+         */
+        let stars = [];
+        let player;
+        let bullets = [];
+        let enemies = [];
+        let particles = [];
+
+        // 初始化/重置遊戲資料
+        function initGame() {
+            score = 0;
+            baseHealth = 100;
+            currentWave = 1;
+            frameCount = 0;
+            bullets = [];
+            enemies = [];
+            particles = [];
+
+            // 生成星空背景
+            stars = [];
+            for (let i = 0; i < 120; i++) {
+                stars.push(new Star());
+            }
+
+            // 創立玩家
+            player = new Player();
+
+            updateHUD();
+        }
+
+        // 觸發粒子爆炸
+        function createExplosion(x, y, color, count = 15) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        // 更新 HUD 文字與血條
+        function updateHUD() {
+            if (baseHealth < 0) baseHealth = 0;
+            hpBar.style.width = `${baseHealth}%`;
+            hpText.innerText = `${baseHealth}%`;
+            
+            // 血條低於 30% 時顯示紅色警示
+            if (baseHealth <= 30) {
+                hpBar.className = "h-full bg-red-600 animate-pulse";
+            } else {
+                hpBar.className = "h-full bg-gradient-to-r from-red-600 via-amber-500 to-cyan-400 transition-all duration-300";
+            }
+
+            scoreDisplay.innerText = String(score).padStart(6, '0');
+            waveDisplay.innerText = `WAVE ${String(currentWave).padStart(2, '0')}`;
+        }
+
+        /**
+         * ============================================================================
+         * 5. 繪製背景：外星地表、遠方星雲與重工業基地 (Background & Surface Rendering)
+         * ============================================================================
+         */
+        function drawBackground() {
+            // 1. 深空宇宙漸層背景
+            const spaceGrad = ctx.createLinearGradient(0, 0, 0, height);
+            spaceGrad.addColorStop(0, '#04060a');
+            spaceGrad.addColorStop(0.6, '#0d131d');
+            spaceGrad.addColorStop(1, '#180e15'); // 底部帶有外星大氣紅紫色彩
+            ctx.fillStyle = spaceGrad;
+            ctx.fillRect(0, 0, width, height);
+
+            // 2. 渲染星空
+            stars.forEach(star => {
+                star.update();
+                star.draw();
+            });
+
+            // 3. 繪製遠方外星山脈地平線 (Alien Surface Horizon)
+            ctx.fillStyle = '#120d18';
+            ctx.beginPath();
+            ctx.moveTo(0, height - 120);
+            ctx.lineTo(width * 0.2, height - 160);
+            ctx.lineTo(width * 0.5, height - 130);
+            ctx.lineTo(width * 0.8, height - 170);
+            ctx.lineTo(width, height - 120);
+            ctx.lineTo(width, height);
+            ctx.lineTo(0, height);
+            ctx.closePath();
+            ctx.fill();
+
+            // 4. 前景：重工業防衛基地地表邊界 (Heavy Industrial Fortress Base)
+            const baseHeight = 60;
+            const baseTop = height - baseHeight;
+
+            // 基地金屬主體
+            ctx.fillStyle = '#0f131a';
+            ctx.fillRect(0, baseTop, width, baseHeight);
+
+            // 金屬頂面亮邊框
+            ctx.strokeStyle = '#00f3ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, baseTop);
+            ctx.lineTo(width, baseTop);
+            ctx.stroke();
+
+            // 基地警示斜條紋裝飾 (Industrial Hazard Stripes)
+            ctx.fillStyle = 'rgba(230, 184, 0, 0.2)';
+            for (let x = 0; x < width; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, baseTop);
+                ctx.lineTo(x + 15, baseTop);
+                ctx.lineTo(x - 5, height);
+                ctx.lineTo(x - 20, height);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 6. 碰撞檢測演算法 (Collision Detection System)
+         * ============================================================================
+         */
+        function handleCollisions() {
+            // 子彈與敵人的 圓形-圓形 (Circle-to-Circle) 碰撞檢測
+            bullets.forEach(bullet => {
+                enemies.forEach(enemy => {
+                    if (!bullet.markedForDeletion && !enemy.markedForDeletion) {
+                        const dx = bullet.x - enemy.x;
+                        const dy = bullet.y - enemy.y;
+                        const distance = Math.hypot(dx, dy);
+
+                        // 若距離小於兩者半徑總和，代表擊中
+                        if (distance < bullet.radius + enemy.radius) {
+                            bullet.markedForDeletion = true;
+                            enemy.hp--;
+
+                            // 產生打擊火花
+                            createExplosion(bullet.x, bullet.y, '#00f3ff', 5);
+
+                            // 敵人摧毀判斷
+                            if (enemy.hp <= 0) {
+                                enemy.markedForDeletion = true;
+                                score += enemy.type === 'drone' ? 100 : 150;
+                                createExplosion(enemy.x, enemy.y, enemy.type === 'drone' ? '#ff2a4b' : '#ffaa00', 18);
+                                playExplosionSound(false);
+                                updateHUD();
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        /**
+         * ============================================================================
+         * 7. 遊戲主循環 (Main Game Loop)
+         * ============================================================================
+         */
+        function gameLoop() {
+            if (!isGameRunning) return;
+
+            frameCount++;
+
+            // 清空與繪製背景
+            drawBackground();
+
+            // 1. 生成敵人邏輯 (隨波次進度增加頻率)
+            const spawnInterval = Math.max(30, 90 - currentWave * 5);
+            if (frameCount - lastSpawnTime > spawnInterval) {
+                enemies.push(new Enemy());
+                lastSpawnTime = frameCount;
+            }
+
+            // 每擊破一定分數提升波次
+            if (score > currentWave * 1000) {
+                currentWave++;
+                updateHUD();
+            }
+
+            // 2. 更新與繪製玩家
+            player.update();
+            player.draw();
+
+            // 3. 更新與繪製子彈
+            bullets.forEach(bullet => bullet.update());
+            bullets.forEach(bullet => bullet.draw());
+            bullets = bullets.filter(b => !b.markedForDeletion);
+
+            // 4. 更新與繪製敵機
+            enemies.forEach(enemy => enemy.update());
+            enemies.forEach(enemy => enemy.draw());
+            enemies = enemies.filter(e => !e.markedForDeletion);
+
+            // 5. 更新與繪製爆破粒子
+            particles.forEach(p => p.update());
+            particles.forEach(p => p.draw());
+            particles = particles.filter(p => !p.markedForDeletion);
+
+            // 6. 執行碰撞檢查
+            handleCollisions();
+
+            // 7. 檢查遊戲失敗條件
+            if (baseHealth <= 0) {
+                endGame();
+                return;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 結束遊戲
+        function endGame() {
+            isGameRunning = false;
+            playExplosionSound(true);
+            finalScoreText.innerText = score;
+            gameOverInfo.classList.remove('hidden');
+            startBtn.innerText = "RESTART DEFENSE";
+            overlayMenu.classList.remove('hidden');
+        }
+
+        /**
+         * ============================================================================
+         * 8. 使用者控制與事件監聽 (Controls & Event Listeners)
+         * ============================================================================
+         */
+
+        // 鍵盤按下事件
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
+            if (e.code === 'Space') {
+                keys.shoot = true;
+                e.preventDefault(); // 防止空白頁面滾動
+            }
+        });
+
+        // 鍵盤釋放事件
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
+            if (e.code === 'Space') keys.shoot = false;
+        });
+
+        // 滑鼠左鍵點擊射擊與視窗跟隨
+        window.addEventListener('mousedown', (e) => {
+            if (isGameRunning && e.button === 0) {
+                keys.shoot = true;
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) keys.shoot = false;
+        });
+
+        // 滑鼠移動控制砲塔位置 (增加操作流暢度)
+        window.addEventListener('mousemove', (e) => {
+            if (isGameRunning && player) {
+                player.x = e.clientX - player.width / 2;
+            }
+        });
+
+        // 開始按鈕點擊事件
+        startBtn.addEventListener('click', () => {
+            initAudio(); // 初始化音效上下文
+            initGame();
+            overlayMenu.classList.add('hidden');
+            isGameRunning = true;
+            requestAnimationFrame(gameLoop);
+        });
+
+    </script>
+</body>
+</html>
